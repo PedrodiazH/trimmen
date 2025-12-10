@@ -53,9 +53,18 @@ async def crop_pdf(
         real_w = w * rect.width
         real_h = h * rect.height
 
-        # 5. Recortar
-        crop_rect = fitz.Rect(real_x, real_y, real_x + real_w, real_y + real_h)
-        page.set_cropbox(crop_rect)
+        # 5. Recortar (FIX: Intersección segura)
+        requested_rect = fitz.Rect(real_x, real_y, real_x + real_w, real_y + real_h)
+        
+        # EL TRUCO: Cruzamos la selección con el tamaño real de la página.
+        # El operador '&' corta automáticamente lo que sobre.
+        final_rect = requested_rect & page.rect 
+
+        # Verificación extra por seguridad
+        if final_rect.is_empty:
+             return JSONResponse(status_code=400, content={"detail": "Selección fuera de los límites"})
+
+        page.set_cropbox(final_rect)
 
         # 6. Guardar en memoria
         output_buffer = io.BytesIO()
