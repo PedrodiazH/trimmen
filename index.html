@@ -170,19 +170,28 @@
             container.appendChild(wrapper);
         }
 
-        // --- 2. LÓGICA DE SELECCIÓN ---
+        // --- 2. LÓGICA DE SELECCIÓN (CORREGIDA Y ESTILIZADA) ---
         function addMouseEvents(canvas, ctx, originalImage, pageNum) {
             let isSelecting = false;
             let startX = 0, startY = 0;
 
             canvas.addEventListener("mousedown", (e) => {
-                // Si el botón de reinicio ya está visible, bloqueamos nueva selección
+                // Si el botón de reinicio está visible, no dejamos seleccionar
                 if (!reloadBtn.classList.contains("hidden")) return;
 
+                // Limpiar selección de otras páginas
                 if (activePageData && activePageData.pageNum !== pageNum) {
                     const oldCtx = activePageData.canvasRef.getContext("2d");
                     oldCtx.putImageData(activePageData.originalImage, 0, 0); 
                 }
+
+                // --- CORRECCIÓN DEL ERROR DEL CLIC ---
+                // Desactivamos el botón INMEDIATAMENTE al hacer clic.
+                // Así, si el usuario solo hace clic sin mover, el botón se queda apagado.
+                cropBtn.classList.add("btn-disabled");
+                cropBtn.disabled = true;
+                status.innerText = "Seleccionando...";
+                // -------------------------------------
 
                 isSelecting = true;
                 const rect = canvas.getBoundingClientRect();
@@ -211,14 +220,25 @@
                 const w = currentX - startX;
                 const h = currentY - startY;
 
+                // Restaurar fondo limpio
                 ctx.putImageData(originalImage, 0, 0);
                 
+                // --- CAMBIO DE ESTILO (Turquesa Fino) ---
                 ctx.beginPath();
-                ctx.fillStyle = "rgba(45, 212, 191, 0.7)";
-                ctx.strokeStyle = "#2dd4bf";
-                ctx.lineWidth = 3;
+                
+                // Relleno: Usamos 0.15 para que sea "alta transparencia" y se lea el texto de abajo
+                // Si pones 0.7 taparás el texto.
+                ctx.fillStyle = "rgba(45, 212, 191, 0.15)"; 
+                
+                // Borde: Turquesa neón fuerte
+                ctx.strokeStyle = "#2dd4bf"; 
+                
+                // Grosor: 2px para que se vea definido pero fino
+                ctx.lineWidth = 2; 
+                
                 ctx.fillRect(startX, startY, w, h);
                 ctx.strokeRect(startX, startY, w, h);
+                // ----------------------------------------
 
                 activePageData.w = w;
                 activePageData.h = h;
@@ -227,10 +247,17 @@
             canvas.addEventListener("mouseup", () => {
                 if (isSelecting) {
                     isSelecting = false;
-                    if (Math.abs(activePageData.w) > 5 && Math.abs(activePageData.h) > 5) {
+                    // --- VALIDACIÓN DE TAMAÑO ---
+                    // Solo habilitamos el botón si el cuadro mide más de 10 píxeles.
+                    // Esto evita el error de "CropBox" cuando haces un clic accidental.
+                    if (Math.abs(activePageData.w) > 10 && Math.abs(activePageData.h) > 10) {
                         cropBtn.classList.remove("btn-disabled");
                         cropBtn.disabled = false;
                         status.innerText = `Área seleccionada en Página ${pageNum}`;
+                    } else {
+                        // Si fue un clic minúsculo, borramos el dibujo visualmente
+                        ctx.putImageData(originalImage, 0, 0);
+                        status.innerText = "Selección cancelada (muy pequeña)";
                     }
                 }
             });
