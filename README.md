@@ -20,6 +20,7 @@
 
 ### 📦 Instalación y Configuración
 El proyecto esta desplegado y funcional en la siguiente web: 
+**https://pedrodiazh.github.io/trimmen/**
 
 Sin embargo, Si deseas ejecutarlo de manera local (offline), sigue estos pasos:
 
