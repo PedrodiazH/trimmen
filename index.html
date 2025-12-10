@@ -260,7 +260,14 @@
             payload.append("h", finalH / canvas.height);
 
             try {
-                const response = await fetch("/crop", { method: "POST", body: payload });
+                // PARA RENDER
+                const response = await fetch("https://trimmen.onrender.com/crop", { 
+                    method: "POST", 
+                    body: payload 
+                });
+                // para pc en local
+                //const response = await fetch("/crop", { method: "POST", body: payload });
+
                 
                 if (!response.ok) {
                     const err = await response.json();
