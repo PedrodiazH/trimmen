@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trimmen | Recortar PDF</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+                margin: 0;
+                min-height: 100vh;
+                color: #e5e5e5;
+                font-family: 'Inter', sans-serif;
+
+                /* BASE: Un azul muy oscuro (Navy/Black) en lugar de negro puro */
+                background-color: #020617;
+
+                /* GRADIENTES: */
+                background-image: 
+                    /* Luz superior izquierda: Turquesa brillante (Teal-400), amplia y difuminada */
+                    radial-gradient(circle at 0% 0%, rgba(45, 212, 191, 0.20) 0%, transparent 60%),
+                    
+                    /* Luz inferior derecha: Un turquesa más profundo y serio (Teal-700) */
+                    radial-gradient(circle at 100% 100%, rgba(15, 118, 110, 0.15) 0%, transparent 50%);
+
+                background-attachment: fixed;
+                background-repeat: no-repeat;
+            }
+        
+        .glass-card { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(10px); }
+        .btn-gold { background: #fbbf24; color: #1a1a1a; transition: 0.2s ease; }
+        .btn-gold:hover { filter: brightness(1.15); transform: translateY(-2px); }
+        .btn-disabled { background: #4b5563; cursor: not-allowed; color: #9ca3af; transform: none !important; }
+
+        /* Botón secundario "Volver a recortar" */
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #4b5563;
+            color: #b67411;
+            transition: 0.2s ease;
+        }
+        .btn-outline:hover {
+            border-color: #fbbf24;
+            color: #fbbf24;
+            background: rgba(251, 191, 36, 0.05);
+        }
+
+        #pdfContainer {
+            max-height: 70vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            border: 1px dashed rgba(255,255,255,0.2);
+        }
+
+        #pdfContainer::-webkit-scrollbar { width: 10px; }
+        #pdfContainer::-webkit-scrollbar-track { background: #111; }
+        #pdfContainer::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+
+        .pdf-page-wrapper {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        canvas { display: block; cursor: crosshair; }
+    </style>
+</head>
+
+<body class="flex flex-col items-center justify-center min-h-screen p-6">
+
+    <div class="glass-card w-full max-w-5xl p-6 rounded-xl shadow-2xl flex flex-col h-[90vh]">
+        
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h1 class="text-4xl font-bold text-white tracking-tight">Trimmen</h1>
+                <span class="block text-xl font-normal text-gray-400">Herramienta gratuita de recorte ✂️ de PDF</span>
+            </div>
+            <label class="btn-gold px-4 py-2 rounded-lg cursor-pointer font-bold shadow-lg flex items-center gap-2 text-sm">
+                <i class="fa-solid fa-cloud-upload"></i> Subir PDF
+                <input type="file" id="pdfInput" accept="application/pdf" class="hidden">
+            </label>
+        </div>
+
+        <div id="pdfContainer" class="flex-1 relative">
+            <div id="placeholder" class="text-gray-500 mt-20">Sube un PDF para comenzar</div>
+        </div>
+
+        <div class="mt-4 flex flex-col items-center w-full max-w-md mx-auto">
+            <p id="status" class="text-gray-400 text-sm mb-2 h-5"></p>
+            
+            <button id="cropBtn" disabled class="btn-gold btn-disabled w-full py-3 rounded-lg font-bold text-lg shadow-md flex justify-center items-center gap-2 transition-all">
+                <i class="fa-solid fa-scissors"></i> Recortar Selección
+            </button>
+
+            <button id="reloadBtn" class="hidden btn-outline mt-3 px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Volver a recortar (Reiniciar)
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        const container = document.getElementById("pdfContainer");
+        const cropBtn = document.getElementById("cropBtn");
+        const reloadBtn = document.getElementById("reloadBtn"); // Referencia al nuevo botón
+        const status = document.getElementById("status");
+        
+        let pdfFile = null;
+        let activePageData = null;
+
+        // --- 1. CARGA DEL PDF ---
+        document.getElementById("pdfInput").addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            pdfFile = file;
+            container.innerHTML = ""; 
+            cropBtn.classList.add("btn-disabled");
+            cropBtn.disabled = true;
+            // Aseguramos que el botón de reinicio esté oculto al cargar nuevo archivo
+            reloadBtn.classList.add("hidden"); 
+            activePageData = null;
+            status.innerText = "Renderizando páginas...";
+
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                await renderPage(pdfDoc, i);
+            }
+            status.innerText = `Cargado: ${pdfDoc.numPages} páginas. Selecciona un área.`;
+        });
+
+        async function renderPage(pdfDoc, pageNum) {
+            const page = await pdfDoc.getPage(pageNum);
+            
+            // Ajuste automático de ancho
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+            const availableWidth = container.clientWidth - 50; 
+            const scale = availableWidth / unscaledViewport.width;
+            const viewport = page.getViewport({ scale: scale });
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "pdf-page-wrapper";
+            wrapper.style.display = "flex";
+            wrapper.style.justifyContent = "center";
+            
+            const canvas = document.createElement("canvas");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.dataset.pageNum = pageNum; 
+            canvas.style.maxWidth = "100%";
+            canvas.style.height = "auto";
+
+            const ctx = canvas.getContext("2d");
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+            const originalImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            addMouseEvents(canvas, ctx, originalImage, pageNum);
+
+            wrapper.appendChild(canvas);
+            container.appendChild(wrapper);
+        }
+
+        // --- 2. LÓGICA DE SELECCIÓN ---
+        function addMouseEvents(canvas, ctx, originalImage, pageNum) {
+            let isSelecting = false;
+            let startX = 0, startY = 0;
+
+            canvas.addEventListener("mousedown", (e) => {
+                // Si el botón de reinicio ya está visible, bloqueamos nueva selección
+                if (!reloadBtn.classList.contains("hidden")) return;
+
+                if (activePageData && activePageData.pageNum !== pageNum) {
+                    const oldCtx = activePageData.canvasRef.getContext("2d");
+                    oldCtx.putImageData(activePageData.originalImage, 0, 0); 
+                }
+
+                isSelecting = true;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                startX = (e.clientX - rect.left) * scaleX;
+                startY = (e.clientY - rect.top) * scaleY;
+                
+                activePageData = { 
+                    pageNum, 
+                    canvasRef: canvas, 
+                    originalImage,
+                    startX, startY, w: 0, h: 0 
+                };
+            });
+
+            canvas.addEventListener("mousemove", (e) => {
+                if (!isSelecting) return;
+
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const currentX = (e.clientX - rect.left) * scaleX;
+                const currentY = (e.clientY - rect.top) * scaleY;
+
+                const w = currentX - startX;
+                const h = currentY - startY;
+
+                ctx.putImageData(originalImage, 0, 0);
+                
+                ctx.beginPath();
+                ctx.fillStyle = "rgba(251, 191, 36, 0.3)";
+                ctx.strokeStyle = "#fbbf24";
+                ctx.lineWidth = 3;
+                ctx.fillRect(startX, startY, w, h);
+                ctx.strokeRect(startX, startY, w, h);
+
+                activePageData.w = w;
+                activePageData.h = h;
+            });
+
+            canvas.addEventListener("mouseup", () => {
+                if (isSelecting) {
+                    isSelecting = false;
+                    if (Math.abs(activePageData.w) > 5 && Math.abs(activePageData.h) > 5) {
+                        cropBtn.classList.remove("btn-disabled");
+                        cropBtn.disabled = false;
+                        status.innerText = `Área seleccionada en Página ${pageNum}`;
+                    }
+                }
+            });
+        }
+
+        // --- 3. ENVIAR RECORTE ---
+        cropBtn.addEventListener("click", async () => {
+            if (!activePageData || !pdfFile) return;
+
+            status.innerText = "⏳ Procesando...";
+            cropBtn.disabled = true; // Evitar doble clic
+            cropBtn.classList.add("btn-disabled");
+
+            let finalX = activePageData.w < 0 ? activePageData.startX + activePageData.w : activePageData.startX;
+            let finalY = activePageData.h < 0 ? activePageData.startY + activePageData.h : activePageData.startY;
+            let finalW = Math.abs(activePageData.w);
+            let finalH = Math.abs(activePageData.h);
+            
+            const canvas = activePageData.canvasRef;
+
+            const payload = new FormData();
+            payload.append("file", pdfFile);
+            payload.append("page_num", activePageData.pageNum);
+            payload.append("x", finalX / canvas.width);
+            payload.append("y", finalY / canvas.height);
+            payload.append("w", finalW / canvas.width);
+            payload.append("h", finalH / canvas.height);
+
+            try {
+                const response = await fetch("/crop", { method: "POST", body: payload });
+                
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || "Error en servidor");
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `recorte_pag${activePageData.pageNum}.pdf`;
+                a.click();
+                
+                status.innerText = "✔ Descarga lista";
+                
+                // --- MOSTRAR BOTÓN DE REINICIO ---
+                reloadBtn.classList.remove("hidden");
+
+            } catch (error) {
+                console.error(error);
+                alert("Error: " + error.message);
+                status.innerText = "❌ Fallo en el recorte";
+                cropBtn.disabled = false; // Reactivar si falló
+                cropBtn.classList.remove("btn-disabled");
+            }
+        });
+
+        // --- 4. ACCIÓN DEL BOTÓN REINICIAR ---
+        reloadBtn.addEventListener("click", () => {
+            window.location.reload();
+        });
+
+    </script>
+</body>
+</html>
